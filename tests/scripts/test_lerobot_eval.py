@@ -178,7 +178,7 @@ def test_rollout_reports_what_the_environment_measures():
     assert result["metrics"]["tick"].tolist() == [[1.0, 2.0]]
 
 
-def _eval_all(env_cls) -> dict:
+def _eval_all(env_cls, n_episodes: int = 1) -> dict:
     """Run `eval_policy_all`, which is what `lerobot-eval` writes to eval_info.json."""
 
     class _Policy(_RecordingPolicy):
@@ -195,7 +195,7 @@ def _eval_all(env_cls) -> dict:
             env_postprocessor=PolicyProcessorPipeline(steps=[]),
             preprocessor=preprocessor,
             postprocessor=postprocessor,
-            n_episodes=1,
+            n_episodes=n_episodes,
             start_seed=0,
         )
     finally:
@@ -209,12 +209,39 @@ def test_eval_info_keeps_what_the_environment_measures():
             return observation, reward, terminated, truncated, {"metrics": {"tick": float(self.tick)}}
 
     info = _eval_all(_MeasuringEnv)
-    assert info["per_task"][0]["metrics"]["per_episode"][0]["metrics"] == {"tick": 2.0}
+    episode = info["per_task"][0]["metrics"]["per_episode"][0]
+    assert episode["metrics"] == {"tick": 2.0}
+    assert episode["seed"] == 0
     json.dumps(info)  # eval_info.json must stay serializable
 
 
-def test_eval_info_is_unchanged_when_the_environment_measures_nothing():
-    assert "per_episode" not in _eval_all(_TwoStepEnv)["per_task"][0]["metrics"]
+def test_eval_info_keeps_per_episode_when_the_environment_measures_nothing():
+    metrics = _eval_all(_TwoStepEnv, n_episodes=2)["per_task"][0]["metrics"]
+    assert set(metrics) == {
+        "sum_rewards",
+        "max_rewards",
+        "successes",
+        "video_paths",
+        "predicted_video_paths",
+        "per_episode",
+    }
+    assert metrics["per_episode"] == [
+        {
+            "episode_ix": 0,
+            "sum_reward": 0.0,
+            "max_reward": 0.0,
+            "success": False,
+            "seed": 0,
+        },
+        {
+            "episode_ix": 1,
+            "sum_reward": 0.0,
+            "max_reward": 0.0,
+            "success": False,
+            "seed": 1,
+        },
+    ]
+    json.dumps(metrics)  # eval_info.json must stay serializable
 
 
 def test_rollout_ends_at_the_step_cap_below_the_env_limit():
